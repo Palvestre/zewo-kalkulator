@@ -173,84 +173,83 @@ const chartRef = ref(null)
 
 function renderChart(ctx, ox, oy, cw, ch) {
   const N = 20
-  const perVask = totSape.value
-  const data = Array.from({ length: N }, (_, i) => +((i + 1) * perVask).toFixed(2))
-  const maxVal = Math.max(...data, 1)
+  const broPerVask = Math.abs(bro.value.sdl)
+  const dekkPerVask = Math.abs(dekk.value.tsl)
+  const totalPerVask = broPerVask + dekkPerVask
+
+  // Kumulative data per vask
+  const broData  = Array.from({ length: N }, (_, i) => +((i + 1) * broPerVask).toFixed(2))
+  const dekkData = Array.from({ length: N }, (_, i) => +((i + 1) * dekkPerVask).toFixed(2))
+  const totData  = Array.from({ length: N }, (_, i) => +((i + 1) * totalPerVask).toFixed(2))
+
+  const maxVal = Math.max(...totData, 1)
   const topVal = Math.ceil(maxVal / 5) * 5
 
-  const pad = { top: 26, right: 18, bottom: 30, left: 46 }
+  const pad = { top: 34, right: 18, bottom: 30, left: 46 }
   const iw = cw - pad.left - pad.right
   const ih = ch - pad.top - pad.bottom
 
-  const px = i => ox + pad.left + (i / (N - 1)) * iw
-  const py = v => oy + pad.top + ih * (1 - v / topVal)
+  const barSlot = iw / N
+  const barW    = Math.max(2, barSlot * 0.68)
+  const bx = i  => ox + pad.left + barSlot * i + (barSlot - barW) / 2
+  const by = v  => oy + pad.top + ih * (1 - v / topVal)
+  const bh = v  => ih * (v / topVal)
+  const base    = oy + pad.top + ih
 
   // Bakgrunn
   ctx.fillStyle = '#fff'
   ctx.fillRect(ox, oy, cw, ch)
 
-  // Tittel
-  ctx.fillStyle = '#C8102E'
-  ctx.font = 'bold 9px Arial'
-  ctx.textAlign = 'left'
-  ctx.fillText('Simulert besparelse over 20 vask', ox + pad.left, oy + 14)
-
-  // Horisontal rutenett + Y-akse-etiketter
+  // Horisontal rutenett + Y-etiketter
   for (let j = 1; j <= 4; j++) {
     const yg = oy + pad.top + ih * (j / 4)
-    ctx.strokeStyle = '#f0f0f0'
-    ctx.lineWidth = 0.5
+    ctx.strokeStyle = '#f0f0f0'; ctx.lineWidth = 0.5
     ctx.beginPath(); ctx.moveTo(ox + pad.left, yg); ctx.lineTo(ox + pad.left + iw, yg); ctx.stroke()
-    ctx.fillStyle = '#aaa'
-    ctx.font = '7px Arial'
-    ctx.textAlign = 'right'
+    ctx.fillStyle = '#aaa'; ctx.font = '7px Arial'; ctx.textAlign = 'right'
     ctx.fillText(fmt(topVal * (1 - j / 4), 0) + ' l', ox + pad.left - 4, yg + 3)
   }
 
-  // Fylt areal
-  ctx.beginPath()
-  ctx.moveTo(px(0), py(0))
-  data.forEach((v, i) => ctx.lineTo(px(i), py(v)))
-  ctx.lineTo(px(N - 1), oy + pad.top + ih)
-  ctx.lineTo(px(0), oy + pad.top + ih)
-  ctx.closePath()
-  ctx.fillStyle = 'rgba(200,16,46,0.09)'
-  ctx.fill()
-
-  // Linje
-  ctx.beginPath()
-  ctx.moveTo(px(0), py(data[0]))
-  data.forEach((v, i) => { if (i > 0) ctx.lineTo(px(i), py(v)) })
-  ctx.strokeStyle = '#C8102E'
-  ctx.lineWidth = 1.8
-  ctx.lineJoin = 'round'
-  ctx.stroke()
+  // Stablete søyler
+  for (let i = 0; i < N; i++) {
+    const x = bx(i)
+    // Dekk – øverst (mørk)
+    if (dekkData[i] > 0) {
+      ctx.fillStyle = '#374151'
+      ctx.fillRect(x, by(totData[i]), barW, bh(dekkData[i]))
+    }
+    // Bro – nederst (rød)
+    if (broData[i] > 0) {
+      ctx.fillStyle = '#C8102E'
+      ctx.fillRect(x, by(broData[i]), barW, bh(broData[i]))
+    }
+  }
 
   // Akselinjer
-  ctx.strokeStyle = '#ddd'
-  ctx.lineWidth = 0.5
+  ctx.strokeStyle = '#ddd'; ctx.lineWidth = 0.5
   ctx.beginPath()
   ctx.moveTo(ox + pad.left, oy + pad.top)
-  ctx.lineTo(ox + pad.left, oy + pad.top + ih)
-  ctx.lineTo(ox + pad.left + iw, oy + pad.top + ih)
+  ctx.lineTo(ox + pad.left, base)
+  ctx.lineTo(ox + pad.left + iw, base)
   ctx.stroke()
 
-  // X-akse-etiketter
-  ctx.fillStyle = '#aaa'
-  ctx.font = '7px Arial'
-  ctx.textAlign = 'center';
-  [0, 4, 9, 14, 19].forEach(i => ctx.fillText(String(i + 1), px(i), oy + pad.top + ih + 12))
+  // X-etiketter
+  ctx.fillStyle = '#aaa'; ctx.font = '7px Arial'; ctx.textAlign = 'center'
+  ;[0, 4, 9, 14, 19].forEach(i => ctx.fillText(String(i + 1), bx(i) + barW / 2, base + 12))
   ctx.fillText('Antall vask', ox + pad.left + iw / 2, oy + ch - 1)
   ctx.textAlign = 'left'
 
-  // Siste punkt + etikett
-  const lx = px(N - 1), ly = py(data[N - 1])
-  ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2)
-  ctx.fillStyle = '#C8102E'; ctx.fill()
-  ctx.font = 'bold 8px Arial'; ctx.fillStyle = '#C8102E'
-  ctx.textAlign = 'right'
-  ctx.fillText(fmt(data[N - 1]) + ' l spart', lx - 7, ly - 5)
-  ctx.textAlign = 'left'
+  // Legende øverst til høyre
+  const leg = [
+    { color: '#C8102E', label: 'Såpe bro' },
+    { color: '#374151', label: 'Såpe dekk' }
+  ]
+  leg.forEach((s, si) => {
+    const lx = ox + pad.left + si * 90
+    const ly = oy + 12
+    ctx.fillStyle = s.color; ctx.fillRect(lx, ly - 7, 9, 7)
+    ctx.fillStyle = '#444'; ctx.font = '7px Arial'; ctx.textAlign = 'left'
+    ctx.fillText(s.label, lx + 12, ly)
+  })
 }
 
 function updateChart() {
