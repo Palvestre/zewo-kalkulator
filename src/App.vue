@@ -136,7 +136,8 @@ function makePdf() {
       let off = 0; for (const x of ps) { const u = x instanceof Uint8Array ? x : e(x); res.set(u, off); off += u.length }
       const a = document.createElement('a')
       a.href = URL.createObjectURL(new Blob([res], { type: 'application/pdf' }))
-      a.download = 'Zewo_Rapport_' + (fartoy.value || 'kalkulasjon').replace(/\s+/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.pdf'
+      const safeName = (fartoy.value || 'kalkulasjon').replace(/[^a-zA-Z0-9_\u00C0-\u024F\s-]/g, '').replace(/\s+/g, '_').slice(0, 50)
+      a.download = 'Zewo_Rapport_' + safeName + '_' + new Date().toISOString().slice(0,10) + '.pdf'
       a.click(); URL.revokeObjectURL(a.href)
       pdfOk.value = true; setTimeout(() => pdfOk.value = false, 2500)
     }
@@ -144,11 +145,17 @@ function makePdf() {
   }, 'image/jpeg', 0.92)
 }
 
+// Fjerner tegn som kan brukes til header-injeksjon i mailto:-lenker
+const sanitizeMailInput = (s) => s.replace(/[\r\n\t%]/g, '').trim()
+
 function sendMail() {
   const b = bro.value, d = dekk.value
-  const subj = encodeURIComponent('Zewo – Kalkulasjonsresultat' + (fartoy.value ? ' ' + fartoy.value : ''))
-  const body = encodeURIComponent('Hei' + (kunde.value ? ' ' + kunde.value : '') + ',\n\nKalkulasjon fra Zewo Chemicals:' + (fartoy.value ? '\nFartøy: ' + fartoy.value : '') + '\n\nTIDSBESPARELSE\n• Normalvask: ' + fmt(Math.abs(b.nrm),0) + ' min\n• Fullskala: ' + fmt(Math.abs(b.frm),0) + ' min\n\nKJEMIBESPARELSE\n• Såpe bro: ' + fmt(Math.abs(b.sdl)) + ' l\n• Såpe dekk: ' + fmt(Math.abs(d.tsl)) + ' l\n\nTOTAL SÅPE SPART: ' + fmt(totSape.value) + ' l/vask\n\nSe vedlagt PDF.\n\nMvh,\n' + (kontakt.value ? kontakt.value + '\n' : '') + 'Zewo Chemicals AS')
-  window.open('mailto:' + epost.value + '?subject=' + subj + '&body=' + body)
+  const safeKunde = sanitizeMailInput(kunde.value)
+  const safeFartoy = sanitizeMailInput(fartoy.value)
+  const safeKontakt = sanitizeMailInput(kontakt.value)
+  const subj = encodeURIComponent('Zewo – Kalkulasjonsresultat' + (safeFartoy ? ' ' + safeFartoy : ''))
+  const body = encodeURIComponent('Hei' + (safeKunde ? ' ' + safeKunde : '') + ',\n\nKalkulasjon fra Zewo Chemicals:' + (safeFartoy ? '\nFartøy: ' + safeFartoy : '') + '\n\nTIDSBESPARELSE\n• Normalvask: ' + fmt(Math.abs(b.nrm),0) + ' min\n• Fullskala: ' + fmt(Math.abs(b.frm),0) + ' min\n\nKJEMIBESPARELSE\n• Såpe bro: ' + fmt(Math.abs(b.sdl)) + ' l\n• Såpe dekk: ' + fmt(Math.abs(d.tsl)) + ' l\n\nTOTAL SÅPE SPART: ' + fmt(totSape.value) + ' l/vask\n\nSe vedlagt PDF.\n\nMvh,\n' + (safeKontakt ? safeKontakt + '\n' : '') + 'Zewo Chemicals AS')
+  window.open('mailto:' + encodeURIComponent(epost.value) + '?subject=' + subj + '&body=' + body)
   showMail.value = false
 }
 
