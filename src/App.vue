@@ -52,7 +52,7 @@ const resCol = (v) => v > 0 ? 'var(--zewo-red-neg)' : 'var(--zewo-green)'
 
 // PDF Generation
 function makePdf() {
-  const W = 595, H = 842, SC = 2
+  const W = 595, H = 940, SC = 2
   const cv = document.createElement('canvas')
   cv.width = W * SC; cv.height = H * SC
   const c = cv.getContext('2d')
@@ -109,8 +109,8 @@ function makePdf() {
   c.font = 'bold 13px Arial'; c.fillStyle = '#16a34a'
   c.fillText('Total såpe spart: '+fmt(totSape.value)+' liter', m+12, y+84)
   y += 100
-  renderChart(c, m, y, W - 52, 105)
-  y += 113
+  renderChart(c, m, y, W - 52, 180)
+  y += 188
   c.fillStyle = '#C8102E'; c.fillRect(0, H-28, W, 28)
   c.fillStyle = 'rgba(255,255,255,.7)'; c.font = '8px Arial'
   c.fillText('Zewo Chemicals AS – Smarter Cleaning', m, H-10)
