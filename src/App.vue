@@ -232,6 +232,14 @@ function renderChart(ctx, ox, oy, cw, ch) {
   ctx.lineTo(ox + pad.left + iw, base)
   ctx.stroke()
 
+  // Y-akse-benevnelse (rotert)
+  ctx.save()
+  ctx.translate(ox + 8, oy + pad.top + ih / 2)
+  ctx.rotate(-Math.PI / 2)
+  ctx.fillStyle = '#888'; ctx.font = '7px Arial'; ctx.textAlign = 'center'
+  ctx.fillText('Liter spart (kumulativt)', 0, 0)
+  ctx.restore()
+
   // X-etiketter
   ctx.fillStyle = '#aaa'; ctx.font = '7px Arial'; ctx.textAlign = 'center'
   ;[0, 4, 9, 14, 19].forEach(i => ctx.fillText(String(i + 1), bx(i) + barW / 2, base + 12))
