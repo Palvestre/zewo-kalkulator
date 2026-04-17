@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 
 const tab = ref('bro')
 const pdfOk = ref(false)
@@ -108,6 +108,9 @@ function makePdf() {
   c.fillText('Såpe dekk: '+fmt(Math.abs(d.tsl))+' l', m+12, y+68)
   c.font = 'bold 13px Arial'; c.fillStyle = '#16a34a'
   c.fillText('Total såpe spart: '+fmt(totSape.value)+' liter', m+12, y+84)
+  y += 100
+  renderChart(c, m, y, W - 52, 105)
+  y += 113
   c.fillStyle = '#C8102E'; c.fillRect(0, H-28, W, 28)
   c.fillStyle = 'rgba(255,255,255,.7)'; c.font = '8px Arial'
   c.fillText('Zewo Chemicals AS – Smarter Cleaning', m, H-10)
@@ -164,6 +167,107 @@ const tabs = [
   { key: 'dekk', icon: '🦺', label: 'Dekk' },
   { key: 'results', icon: '📊', label: 'Resultat' }
 ]
+
+// ── Graf ─────────────────────────────────────────────────────────────────────
+const chartRef = ref(null)
+
+function renderChart(ctx, ox, oy, cw, ch) {
+  const N = 20
+  const perVask = totSape.value
+  const data = Array.from({ length: N }, (_, i) => +((i + 1) * perVask).toFixed(2))
+  const maxVal = Math.max(...data, 1)
+  const topVal = Math.ceil(maxVal / 5) * 5
+
+  const pad = { top: 26, right: 18, bottom: 30, left: 46 }
+  const iw = cw - pad.left - pad.right
+  const ih = ch - pad.top - pad.bottom
+
+  const px = i => ox + pad.left + (i / (N - 1)) * iw
+  const py = v => oy + pad.top + ih * (1 - v / topVal)
+
+  // Bakgrunn
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(ox, oy, cw, ch)
+
+  // Tittel
+  ctx.fillStyle = '#C8102E'
+  ctx.font = 'bold 9px Arial'
+  ctx.textAlign = 'left'
+  ctx.fillText('Simulert besparelse over 20 vask', ox + pad.left, oy + 14)
+
+  // Horisontal rutenett + Y-akse-etiketter
+  for (let j = 1; j <= 4; j++) {
+    const yg = oy + pad.top + ih * (j / 4)
+    ctx.strokeStyle = '#f0f0f0'
+    ctx.lineWidth = 0.5
+    ctx.beginPath(); ctx.moveTo(ox + pad.left, yg); ctx.lineTo(ox + pad.left + iw, yg); ctx.stroke()
+    ctx.fillStyle = '#aaa'
+    ctx.font = '7px Arial'
+    ctx.textAlign = 'right'
+    ctx.fillText(fmt(topVal * (1 - j / 4), 0) + ' l', ox + pad.left - 4, yg + 3)
+  }
+
+  // Fylt areal
+  ctx.beginPath()
+  ctx.moveTo(px(0), py(0))
+  data.forEach((v, i) => ctx.lineTo(px(i), py(v)))
+  ctx.lineTo(px(N - 1), oy + pad.top + ih)
+  ctx.lineTo(px(0), oy + pad.top + ih)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(200,16,46,0.09)'
+  ctx.fill()
+
+  // Linje
+  ctx.beginPath()
+  ctx.moveTo(px(0), py(data[0]))
+  data.forEach((v, i) => { if (i > 0) ctx.lineTo(px(i), py(v)) })
+  ctx.strokeStyle = '#C8102E'
+  ctx.lineWidth = 1.8
+  ctx.lineJoin = 'round'
+  ctx.stroke()
+
+  // Akselinjer
+  ctx.strokeStyle = '#ddd'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(ox + pad.left, oy + pad.top)
+  ctx.lineTo(ox + pad.left, oy + pad.top + ih)
+  ctx.lineTo(ox + pad.left + iw, oy + pad.top + ih)
+  ctx.stroke()
+
+  // X-akse-etiketter
+  ctx.fillStyle = '#aaa'
+  ctx.font = '7px Arial'
+  ctx.textAlign = 'center';
+  [0, 4, 9, 14, 19].forEach(i => ctx.fillText(String(i + 1), px(i), oy + pad.top + ih + 12))
+  ctx.fillText('Antall vask', ox + pad.left + iw / 2, oy + ch - 1)
+  ctx.textAlign = 'left'
+
+  // Siste punkt + etikett
+  const lx = px(N - 1), ly = py(data[N - 1])
+  ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2)
+  ctx.fillStyle = '#C8102E'; ctx.fill()
+  ctx.font = 'bold 8px Arial'; ctx.fillStyle = '#C8102E'
+  ctx.textAlign = 'right'
+  ctx.fillText(fmt(data[N - 1]) + ' l spart', lx - 7, ly - 5)
+  ctx.textAlign = 'left'
+}
+
+function updateChart() {
+  const canvas = chartRef.value
+  if (!canvas) return
+  const dpr = window.devicePixelRatio || 1
+  const rect = canvas.getBoundingClientRect()
+  canvas.width = rect.width * dpr
+  canvas.height = rect.height * dpr
+  const ctx = canvas.getContext('2d')
+  ctx.scale(dpr, dpr)
+  renderChart(ctx, 0, 0, rect.width, rect.height)
+}
+
+watch([tab, totSape], ([newTab]) => {
+  if (newTab === 'results') nextTick(updateChart)
+})
 </script>
 
 <template>
@@ -326,6 +430,11 @@ const tabs = [
         </div>
       </div>
 
+      <h3 class="sec-title">Besparelse over tid</h3>
+      <div class="chart-card">
+        <canvas ref="chartRef" class="chart-canvas"></canvas>
+      </div>
+
       <div class="act-bar">
         <button class="act-btn pdf-btn" @click="makePdf">{{ pdfOk ? '✅ Lastet ned!' : '📄 Last ned PDF' }}</button>
         <button class="act-btn send-btn" @click="showMail = true">✉️ Send til kunde</button>
@@ -433,6 +542,9 @@ const tabs = [
 .formulas { background: var(--zewo-surface); border: 1px solid var(--zewo-border); border-radius: 12px; padding: 14px; }
 .formulas-title { font-size: 10px; font-weight: 700; color: var(--zewo-text-dim); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 8px; }
 .fml { font-size: 11px; font-family: var(--mono); color: var(--zewo-red); padding: 2px 0; opacity: .8; }
+
+.chart-card { background: var(--zewo-surface); border: 1px solid var(--zewo-border); border-radius: var(--radius); padding: 12px 10px 8px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
+.chart-canvas { width: 100%; height: 200px; display: block; }
 
 .muted { color: var(--zewo-text-muted); }
 .green { color: var(--zewo-green); }
