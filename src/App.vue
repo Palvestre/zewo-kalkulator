@@ -178,7 +178,12 @@ function loadImage(url) {
 }
 
 // ── PDF ───────────────────────────────────────────────────────────────────────
-async function makePdf() {
+function pdfFileName() {
+  const safe = (fartoy.value || 'kalkulasjon').replace(/[^a-zA-Z0-9_À-ɏ\s-]/g, '').replace(/\s+/g, '_').slice(0, 50)
+  return 'Zewo_Rapport_' + safe + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
+}
+
+async function buildPdfBytes() {
   const W = 595, H = 1020, SC = 2
   const logoImg = await loadImage('https://static.wixstatic.com/media/4acf40_03fd2b0a41244a7ca3e8273a936f2b18~mv2.png/v1/fill/w_460,h_128,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/zewo_smarter_cleaning_red_transparent_pn.png')
 
@@ -261,8 +266,11 @@ async function makePdf() {
   c.fillText('Zewo Chemicals AS – Smarter Cleaning', m, H - 10)
   c.fillText(new Date().toLocaleString('nb-NO'), W - 130, H - 10)
 
+  return new Promise((resolve, reject) => {
   cv.toBlob(blob => {
+    if (!blob) return reject(new Error("PDF-feil"));
     const rd = new FileReader()
+    rd.onerror = () => reject(rd.error || new Error("PDF-feil"))
     rd.onload = () => {
       const img = new Uint8Array(rd.result)
       const e = s => new TextEncoder().encode(s), ps = [], os = []
@@ -283,15 +291,107 @@ async function makePdf() {
       wr('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF')
       const tot = ps.reduce((a, b) => a + b.length, 0), res = new Uint8Array(tot)
       let off = 0; for (const x of ps) { const u = x instanceof Uint8Array ? x : e(x); res.set(u, off); off += u.length }
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([res], { type: 'application/pdf' }))
-      const safeName = (fartoy.value || 'kalkulasjon').replace(/[^a-zA-Z0-9_\u00C0-\u024F\s-]/g, '').replace(/\s+/g, '_').slice(0, 50)
-      a.download = 'Zewo_Rapport_' + safeName + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
-      a.click(); URL.revokeObjectURL(a.href)
-      pdfOk.value = true; setTimeout(() => pdfOk.value = false, 2500)
+      resolve(res)
     }
     rd.readAsArrayBuffer(blob)
   }, 'image/jpeg', 0.92)
+  })
+}
+
+async function makePdf() {
+  try {
+    const bytes = await buildPdfBytes()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+    a.download = pdfFileName()
+    a.click(); URL.revokeObjectURL(a.href)
+    pdfOk.value = true; setTimeout(() => pdfOk.value = false, 2500)
+  } catch (e) { alert('Kunne ikke generere PDF: ' + (e.message || e)) }
+}
+
+// ── Direct email send ─────────────────────────────────────────────────────────
+const sending   = ref(false)
+const sentOk    = ref(false)
+const sendError = ref('')
+
+function bytesToBase64(bytes) {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+  return btoa(bin)
+}
+
+function buildEmailContent() {
+  const b = bro.value, d = dekk.value
+  const safeKunde   = sanitizeMailInput(kunde.value)
+  const safeFartoy  = sanitizeMailInput(fartoy.value)
+  const safeKontakt = sanitizeMailInput(kontakt.value)
+  const subject = 'Zewo – Kalkulasjonsresultat' + (safeFartoy ? ' ' + safeFartoy : '')
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
+  const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+  <div style="background:#000;color:#fff;padding:20px 24px;border-bottom:3px solid #C8102E">
+    <div style="font-size:20px;font-weight:700">Zewo – Kalkulasjonsresultat</div>
+    <div style="color:rgba(255,255,255,.6);font-size:12px;margin-top:4px">Vaskekjemi &amp; dosering – Brønnbåt</div>
+  </div>
+  <div style="padding:24px;background:#f7f7f7">
+    <p style="margin:0 0 12px">Hei${safeKunde ? ' ' + esc(safeKunde) : ''},</p>
+    <p style="margin:0 0 16px">Her er kalkulasjon fra Zewo Chemicals${safeFartoy ? ' for <strong>' + esc(safeFartoy) + '</strong>' : ''}.</p>
+    <div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin:16px 0">
+      <div style="font-size:11px;font-weight:700;color:#C8102E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Tidsbesparelse</div>
+      <div style="font-size:13px;line-height:1.7">Normalvask: <strong>${fmt(Math.abs(b.nrm), 0)} min</strong><br>Fullskala: <strong>${fmt(Math.abs(b.frm), 0)} min</strong></div>
+    </div>
+    <div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin:16px 0">
+      <div style="font-size:11px;font-weight:700;color:#C8102E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Kjemibesparelse per vask</div>
+      <div style="font-size:13px;line-height:1.7">Såpe bro: <strong>${fmt(Math.abs(b.sdl))} l</strong><br>Såpe dekk: <strong>${fmt(Math.abs(d.tsl))} l</strong><br><span style="color:#16A34A;font-weight:700">Total: ${fmt(totSape.value)} l/vask</span></div>
+    </div>
+    <div style="background:#fff;border:2px solid #C8102E;border-radius:8px;padding:18px;margin:20px 0;text-align:center">
+      <div style="font-size:11px;color:#888;letter-spacing:1.5px;text-transform:uppercase">Estimert kostnadsbesparelse</div>
+      <div style="font-size:30px;font-weight:700;color:#C8102E;margin:6px 0">≈ ${Math.round(krPerAr.value).toLocaleString('nb-NO')} kr/år</div>
+      <div style="font-size:12px;color:#888">Per vask: ≈ ${Math.round(krPerVask.value).toLocaleString('nb-NO')} kr · ${vaskPerAr.value} vask × ${prisPerLiter.value} kr/l</div>
+    </div>
+    <p style="margin:16px 0 0;font-size:13px;color:#555">Detaljert rapport ligger som vedlegg (PDF).</p>
+    <p style="margin:24px 0 0;font-size:13px">Mvh,<br>${safeKontakt ? esc(safeKontakt) + '<br>' : ''}<strong>Zewo Chemicals AS</strong></p>
+  </div>
+  <div style="padding:14px 24px;background:#000;color:rgba(255,255,255,.4);font-size:10px;text-align:center">Generert ${new Date().toLocaleString('nb-NO')} · zewo.no</div>
+</div>`
+  const text =
+    'Hei' + (safeKunde ? ' ' + safeKunde : '') + ',\n\n' +
+    'Kalkulasjon fra Zewo Chemicals:' + (safeFartoy ? '\nFartøy: ' + safeFartoy : '') + '\n\n' +
+    'TIDSBESPARELSE\n• Normalvask: ' + fmt(Math.abs(b.nrm), 0) + ' min\n• Fullskala: ' + fmt(Math.abs(b.frm), 0) + ' min\n\n' +
+    'KJEMIBESPARELSE PER VASK\n• Såpe bro: ' + fmt(Math.abs(b.sdl)) + ' l\n• Såpe dekk: ' + fmt(Math.abs(d.tsl)) + ' l\n• Total: ' + fmt(totSape.value) + ' l/vask\n\n' +
+    'ESTIMERT KOSTNADSBESPARELSE\n• Per vask: ca. ' + Math.round(krPerVask.value).toLocaleString('nb-NO') + ' kr\n• Per år (' + vaskPerAr.value + ' vask): ca. ' + Math.round(krPerAr.value).toLocaleString('nb-NO') + ' kr\n\n' +
+    'Se vedlagt PDF.\n\nMvh,\n' + (safeKontakt ? safeKontakt + '\n' : '') + 'Zewo Chemicals AS'
+  return { subject, html, text }
+}
+
+async function sendDirectEmail() {
+  if (!epost.value || sending.value) return
+  sending.value = true
+  sendError.value = ''
+  try {
+    const bytes = await buildPdfBytes()
+    const base64 = bytesToBase64(bytes)
+    const { subject, html, text } = buildEmailContent()
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: epost.value.trim(),
+        subject, html, text,
+        pdfBase64: base64,
+        pdfFilename: pdfFileName()
+      })
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status))
+    sentOk.value = true
+    setTimeout(() => { sentOk.value = false; showMail.value = false }, 1800)
+  } catch (e) {
+    sendError.value = String(e.message || e)
+  } finally {
+    sending.value = false
+  }
 }
 
 // ── E-post ────────────────────────────────────────────────────────────────────
@@ -621,23 +721,33 @@ watch([tab, totSape, vaskPerAr], ([newTab]) => {
 
   <!-- SEND MODAL -->
   <Teleport to="body">
-    <div v-if="showMail" class="overlay" @click="showMail = false">
+    <div v-if="showMail" class="overlay" @click="!sending && (showMail = false)">
       <div class="modal" @click.stop>
         <div class="modal-drag"></div>
         <div class="modal-hd">
           <span style="font-size:26px">✉️</span>
-          <div><div class="modal-title">Send rapport</div><div class="modal-sub">E-postklienten åpnes med sammendrag</div></div>
+          <div><div class="modal-title">Send rapport</div><div class="modal-sub">PDF genereres og legges ved automatisk</div></div>
         </div>
+        <label class="field" style="margin-bottom:10px">
+          <span class="field-label">Mottakeradresse</span>
+          <input class="inp" type="email" v-model="epost" placeholder="kunde@eksempel.no" :disabled="sending">
+        </label>
         <div class="modal-preview">
-          <div class="modal-row"><span class="muted">Til:</span><span :style="{ color: epost ? 'var(--zewo-red)' : 'var(--zewo-red-neg)', fontWeight: 500 }">{{ epost || '⚠ Mangler' }}</span></div>
           <div v-if="kunde" class="modal-row"><span class="muted">Kunde:</span><span>{{ kunde }}</span></div>
+          <div v-if="fartoy" class="modal-row"><span class="muted">Fartøy:</span><span>{{ fartoy }}</span></div>
           <div class="modal-row"><span class="muted">Såpe spart:</span><span class="green fw700">{{ fmt(totSape) }} l/vask</span></div>
           <div class="modal-total-row"><span class="muted">Kostnadsbesparelse:</span><span style="color:var(--zewo-red);font-weight:700">≈ {{ fmtKr(krPerAr) }}/år</span></div>
         </div>
-        <div class="modal-tip">💡 Last ned PDF-en først og legg den ved i e-posten.</div>
+        <div v-if="sentOk" class="modal-ok">✅ Sendt! E-posten ble levert til {{ epost }}.</div>
+        <div v-else-if="sendError" class="modal-err">⚠ {{ sendError }}</div>
+        <div v-else class="modal-tip">📎 Detaljert PDF-rapport vedlegges automatisk.</div>
         <div class="modal-actions">
-          <button class="m-cancel" @click="showMail = false">Avbryt</button>
-          <button class="m-confirm" :disabled="!epost" @click="sendMail">✉️ Åpne e-post</button>
+          <button class="m-cancel" :disabled="!epost || sending" @click="sendMail">📧 mailto</button>
+          <button class="m-confirm" :disabled="!epost || sending" @click="sendDirectEmail">
+            <span v-if="sending" class="spinner"></span>
+            <span v-else-if="sentOk">✅ Sendt</span>
+            <span v-else>📤 Send med PDF</span>
+          </button>
         </div>
       </div>
     </div>
@@ -752,4 +862,9 @@ watch([tab, totSape, vaskPerAr], ([newTab]) => {
 .m-cancel  { flex: 1; padding: 13px; border-radius: 30px; border: 1px solid var(--zewo-border); background: none; color: var(--zewo-text-muted); font-size: 14px; font-weight: 600; cursor: pointer; }
 .m-confirm { flex: 2; padding: 13px; border-radius: 30px; border: none; background: var(--zewo-red); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
 .m-confirm:disabled { background: #ccc; opacity: .6; cursor: default; }
+.m-cancel:disabled { opacity: .5; cursor: not-allowed; }
+.modal-ok  { background: #ECFDF5; border: 1px solid #6EE7B7; color: #065F46; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; font-weight: 600; }
+.modal-err { background: #FEF2F2; border: 1px solid #FCA5A5; color: #991B1B; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; font-weight: 500; word-break: break-word; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg) } }
 </style>

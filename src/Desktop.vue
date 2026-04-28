@@ -254,7 +254,13 @@ function loadImage(url) {
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
 const pdfOk = ref(false)
-async function makePdf() {
+
+function pdfFileName() {
+  const safe = (fartoy.value || 'kalkulasjon').replace(/[^a-zA-Z0-9_À-ɏ\s-]/g, '').replace(/\s+/g, '_').slice(0, 50)
+  return 'Zewo_Rapport_' + safe + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
+}
+
+async function buildPdfBytes() {
   const W = 595, H = 1020, SC = 2
   const logoImg = await loadImage('https://static.wixstatic.com/media/4acf40_03fd2b0a41244a7ca3e8273a936f2b18~mv2.png/v1/fill/w_460,h_128,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/zewo_smarter_cleaning_red_transparent_pn.png')
   const cv = document.createElement('canvas')
@@ -319,37 +325,147 @@ async function makePdf() {
   c.fillStyle = 'rgba(255,255,255,.65)'; c.font = '8px Arial'
   c.fillText('Zewo Chemicals AS – Smarter Cleaning', m, H - 10)
   c.fillText(new Date().toLocaleString('nb-NO'), W - 130, H - 10)
-  cv.toBlob(blob => {
-    const rd = new FileReader()
-    rd.onload = () => {
-      const img = new Uint8Array(rd.result)
-      const e = s => new TextEncoder().encode(s), ps = [], os = []
-      let p = 0
-      const wr = s => { const b = typeof s === 'string' ? e(s) : s; ps.push(b); p += b.length }
-      const ob = (n, ct) => { os[n] = p; wr(n + ' 0 obj\n' + ct + '\nendobj\n') }
-      wr('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n')
-      ob(1, '<< /Type /Catalog /Pages 2 0 R >>')
-      ob(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
-      ob(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Contents 4 0 R /Resources << /XObject << /I 5 0 R >> >> >>`)
-      const s = `q ${W} 0 0 ${H} 0 0 cm /I Do Q`
-      ob(4, '<< /Length ' + s.length + ' >>\nstream\n' + s + '\nendstream')
-      os[5] = p
-      wr('5 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + cv.width + ' /Height ' + cv.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.length + ' >>\nstream\n')
-      wr(img); wr('\nendstream\nendobj\n')
-      const xr = p; wr('xref\n0 6\n0000000000 65535 f \n')
-      for (let i = 1; i <= 5; i++) wr(String(os[i]).padStart(10, '0') + ' 00000 n \n')
-      wr('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF')
-      const tot = ps.reduce((a, b) => a + b.length, 0), res = new Uint8Array(tot)
-      let off = 0; for (const x of ps) { const u = x instanceof Uint8Array ? x : e(x); res.set(u, off); off += u.length }
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([res], { type: 'application/pdf' }))
-      const safeName = (fartoy.value || 'kalkulasjon').replace(/[^a-zA-Z0-9_À-ɏ\s-]/g, '').replace(/\s+/g, '_').slice(0, 50)
-      a.download = 'Zewo_Rapport_' + safeName + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
-      a.click(); URL.revokeObjectURL(a.href)
-      pdfOk.value = true; setTimeout(() => pdfOk.value = false, 2500)
-    }
-    rd.readAsArrayBuffer(blob)
-  }, 'image/jpeg', 0.92)
+  return new Promise((resolve, reject) => {
+    cv.toBlob(blob => {
+      if (!blob) return reject(new Error('Kunne ikke generere bilde'))
+      const rd = new FileReader()
+      rd.onerror = () => reject(rd.error || new Error('PDF-feil'))
+      rd.onload = () => {
+        const img = new Uint8Array(rd.result)
+        const e = s => new TextEncoder().encode(s), ps = [], os = []
+        let p = 0
+        const wr = s => { const b = typeof s === 'string' ? e(s) : s; ps.push(b); p += b.length }
+        const ob = (n, ct) => { os[n] = p; wr(n + ' 0 obj\n' + ct + '\nendobj\n') }
+        wr('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n')
+        ob(1, '<< /Type /Catalog /Pages 2 0 R >>')
+        ob(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+        ob(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Contents 4 0 R /Resources << /XObject << /I 5 0 R >> >> >>`)
+        const s = `q ${W} 0 0 ${H} 0 0 cm /I Do Q`
+        ob(4, '<< /Length ' + s.length + ' >>\nstream\n' + s + '\nendstream')
+        os[5] = p
+        wr('5 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + cv.width + ' /Height ' + cv.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.length + ' >>\nstream\n')
+        wr(img); wr('\nendstream\nendobj\n')
+        const xr = p; wr('xref\n0 6\n0000000000 65535 f \n')
+        for (let i = 1; i <= 5; i++) wr(String(os[i]).padStart(10, '0') + ' 00000 n \n')
+        wr('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF')
+        const tot = ps.reduce((a, b) => a + b.length, 0), res = new Uint8Array(tot)
+        let off = 0; for (const x of ps) { const u = x instanceof Uint8Array ? x : e(x); res.set(u, off); off += u.length }
+        resolve(res)
+      }
+      rd.readAsArrayBuffer(blob)
+    }, 'image/jpeg', 0.92)
+  })
+}
+
+async function makePdf() {
+  try {
+    const bytes = await buildPdfBytes()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+    a.download = pdfFileName()
+    a.click(); URL.revokeObjectURL(a.href)
+    pdfOk.value = true; setTimeout(() => pdfOk.value = false, 2500)
+  } catch (e) { alert('Kunne ikke generere PDF: ' + (e.message || e)) }
+}
+
+// ─── Direct email send ────────────────────────────────────────────────────────
+const sending   = ref(false)
+const sentOk    = ref(false)
+const sendError = ref('')
+
+function bytesToBase64(bytes) {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+  }
+  return btoa(bin)
+}
+
+function buildEmailContent() {
+  const b = bro.value, d = dekk.value
+  const safeKunde   = sanitizeMailInput(kunde.value)
+  const safeFartoy  = sanitizeMailInput(fartoy.value)
+  const safeKontakt = sanitizeMailInput(kontakt.value)
+  const subject = 'Zewo – Kalkulasjonsresultat' + (safeFartoy ? ' ' + safeFartoy : '')
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
+  const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+  <div style="background:#000;color:#fff;padding:20px 24px;border-bottom:3px solid #C8102E">
+    <div style="font-size:20px;font-weight:700">Zewo – Kalkulasjonsresultat</div>
+    <div style="color:rgba(255,255,255,.6);font-size:12px;margin-top:4px">Vaskekjemi &amp; dosering – Brønnbåt</div>
+  </div>
+  <div style="padding:24px;background:#f7f7f7">
+    <p style="margin:0 0 12px">Hei${safeKunde ? ' ' + esc(safeKunde) : ''},</p>
+    <p style="margin:0 0 16px">Her er kalkulasjon fra Zewo Chemicals${safeFartoy ? ' for <strong>' + esc(safeFartoy) + '</strong>' : ''}.</p>
+
+    <div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin:16px 0">
+      <div style="font-size:11px;font-weight:700;color:#C8102E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Tidsbesparelse</div>
+      <div style="font-size:13px;line-height:1.7">
+        Normalvask: <strong>${fmt(Math.abs(b.nrm), 0)} min</strong><br>
+        Fullskala: <strong>${fmt(Math.abs(b.frm), 0)} min</strong>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin:16px 0">
+      <div style="font-size:11px;font-weight:700;color:#C8102E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Kjemibesparelse per vask</div>
+      <div style="font-size:13px;line-height:1.7">
+        Såpe bro: <strong>${fmt(Math.abs(b.sdl))} l</strong><br>
+        Såpe dekk: <strong>${fmt(Math.abs(d.tsl))} l</strong><br>
+        <span style="color:#16A34A;font-weight:700">Total: ${fmt(totSape.value)} l/vask</span>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:2px solid #C8102E;border-radius:8px;padding:18px;margin:20px 0;text-align:center">
+      <div style="font-size:11px;color:#888;letter-spacing:1.5px;text-transform:uppercase">Estimert kostnadsbesparelse</div>
+      <div style="font-size:30px;font-weight:700;color:#C8102E;margin:6px 0">≈ ${Math.round(krPerAr.value).toLocaleString('nb-NO')} kr/år</div>
+      <div style="font-size:12px;color:#888">Per vask: ≈ ${Math.round(krPerVask.value).toLocaleString('nb-NO')} kr · ${vaskPerAr.value} vask × ${prisPerLiter.value} kr/l</div>
+    </div>
+
+    <p style="margin:16px 0 0;font-size:13px;color:#555">Detaljert rapport ligger som vedlegg (PDF).</p>
+    <p style="margin:24px 0 0;font-size:13px">Mvh,<br>${safeKontakt ? esc(safeKontakt) + '<br>' : ''}<strong>Zewo Chemicals AS</strong></p>
+  </div>
+  <div style="padding:14px 24px;background:#000;color:rgba(255,255,255,.4);font-size:10px;text-align:center">
+    Generert ${new Date().toLocaleString('nb-NO')} · zewo.no
+  </div>
+</div>`
+  const text =
+    'Hei' + (safeKunde ? ' ' + safeKunde : '') + ',\n\n' +
+    'Kalkulasjon fra Zewo Chemicals:' + (safeFartoy ? '\nFartøy: ' + safeFartoy : '') + '\n\n' +
+    'TIDSBESPARELSE\n• Normalvask: ' + fmt(Math.abs(b.nrm), 0) + ' min\n• Fullskala: ' + fmt(Math.abs(b.frm), 0) + ' min\n\n' +
+    'KJEMIBESPARELSE PER VASK\n• Såpe bro: ' + fmt(Math.abs(b.sdl)) + ' l\n• Såpe dekk: ' + fmt(Math.abs(d.tsl)) + ' l\n• Total: ' + fmt(totSape.value) + ' l/vask\n\n' +
+    'ESTIMERT KOSTNADSBESPARELSE\n• Per vask: ca. ' + Math.round(krPerVask.value).toLocaleString('nb-NO') + ' kr\n• Per år (' + vaskPerAr.value + ' vask): ca. ' + Math.round(krPerAr.value).toLocaleString('nb-NO') + ' kr\n\n' +
+    'Se vedlagt PDF.\n\nMvh,\n' + (safeKontakt ? safeKontakt + '\n' : '') + 'Zewo Chemicals AS'
+  return { subject, html, text }
+}
+
+async function sendDirectEmail() {
+  if (!epost.value || sending.value) return
+  sending.value = true
+  sendError.value = ''
+  try {
+    const bytes = await buildPdfBytes()
+    const base64 = bytesToBase64(bytes)
+    const { subject, html, text } = buildEmailContent()
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: epost.value.trim(),
+        subject, html, text,
+        pdfBase64: base64,
+        pdfFilename: pdfFileName()
+      })
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status))
+    sentOk.value = true
+    setTimeout(() => { sentOk.value = false; showMail.value = false }, 1800)
+  } catch (e) {
+    sendError.value = String(e.message || e)
+  } finally {
+    sending.value = false
+  }
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -717,26 +833,40 @@ function sendMail() {
 
   <!-- ═══ EMAIL MODAL ════════════════════════════════════════════════════════ -->
   <Teleport to="body">
-    <div v-if="showMail" class="d-overlay" @click="showMail = false">
+    <div v-if="showMail" class="d-overlay" @click="!sending && (showMail = false)">
       <div class="d-modal" @click.stop>
         <div class="d-modal-hd">
           <span style="font-size:28px">✉️</span>
           <div>
-            <div class="d-modal-title">Send rapport</div>
-            <div class="d-modal-sub">E-postklienten åpnes med sammendrag</div>
+            <div class="d-modal-title">Send rapport til kunde</div>
+            <div class="d-modal-sub">PDF genereres og legges automatisk ved</div>
           </div>
-          <button class="d-modal-x" @click="showMail = false">✕</button>
+          <button class="d-modal-x" @click="showMail = false" :disabled="sending">✕</button>
         </div>
+
+        <label class="d-field" style="margin-bottom:12px">
+          <span class="d-field-label">Mottakeradresse</span>
+          <input class="d-inp d-inp-full" type="email" v-model="epost" placeholder="kunde@eksempel.no" :disabled="sending">
+        </label>
+
         <div class="d-modal-preview">
-          <div class="d-modal-row"><span>Til:</span><span :style="{ color: epost ? 'var(--zewo-red)' : 'var(--zewo-red-neg)', fontWeight: 500 }">{{ epost || '⚠ Mangler e-post' }}</span></div>
           <div v-if="kunde" class="d-modal-row"><span>Kunde:</span><span>{{ kunde }}</span></div>
+          <div v-if="fartoy" class="d-modal-row"><span>Fartøy:</span><span>{{ fartoy }}</span></div>
           <div class="d-modal-row"><span>Såpe spart:</span><span style="color:var(--zewo-green);font-weight:700">{{ fmt(totSape) }} l/vask</span></div>
           <div class="d-modal-total"><span>Kostnadsbesparelse:</span><span style="color:var(--zewo-red);font-weight:700">≈ {{ fmtKr(krPerAr) }}/år</span></div>
         </div>
-        <div class="d-modal-tip">💡 Last ned PDF-en først og legg den ved i e-posten.</div>
+
+        <div v-if="sentOk" class="d-modal-ok">✅ Sendt! E-posten ble levert til {{ epost }}.</div>
+        <div v-else-if="sendError" class="d-modal-err">⚠ {{ sendError }}</div>
+        <div v-else class="d-modal-tip">📎 Detaljert PDF-rapport blir vedlagt automatisk.</div>
+
         <div class="d-modal-footer">
-          <button class="d-m-cancel" @click="showMail = false">Avbryt</button>
-          <button class="d-m-confirm" :disabled="!epost" @click="sendMail">✉️ Åpne e-postklient</button>
+          <button class="d-m-cancel" @click="sendMail" :disabled="!epost || sending" title="Åpne i e-postklient med mailto">📧 mailto-fallback</button>
+          <button class="d-m-confirm" :disabled="!epost || sending" @click="sendDirectEmail">
+            <span v-if="sending" class="d-spinner"></span>
+            <span v-else-if="sentOk">✅ Sendt</span>
+            <span v-else>📤 Send med PDF</span>
+          </button>
         </div>
       </div>
     </div>
@@ -979,6 +1109,14 @@ function sendMail() {
 .d-m-confirm:hover:not(:disabled) { opacity: .9; }
 .d-m-confirm:disabled { background: #ccc; cursor: not-allowed; }
 
+.d-modal-ok  { background: #ECFDF5; border: 1px solid #6EE7B7; color: #065F46; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; font-weight: 600; }
+.d-modal-err { background: #FEF2F2; border: 1px solid #FCA5A5; color: #991B1B; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; font-weight: 500; word-break: break-word; }
+.d-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+.d-m-confirm:disabled { background: #ccc; cursor: not-allowed; }
+.d-m-cancel:disabled  { opacity: .5; cursor: not-allowed; }
+.d-modal-x:disabled   { opacity: .3; cursor: not-allowed; }
+
 @keyframes fadeIn  { from { opacity: 0 } to { opacity: 1 } }
 @keyframes scaleIn { from { opacity: 0; transform: scale(0.94) } to { opacity: 1; transform: scale(1) } }
+@keyframes spin    { to   { transform: rotate(360deg) } }
 </style>
