@@ -147,8 +147,19 @@ function updateChart() {
   renderChart(ctx, 0, 0, rect.width, rect.height)
 }
 
-watch([activeTab, totSape, vaskPerAr], ([t]) => {
-  if (t === 'results') nextTick(updateChart)
+// Render når canvas monteres (etter Transition mode="out-in")
+watch(chartRef, el => { if (el) nextTick(updateChart) })
+
+// Render på datendring når grafen er synlig
+watch([totSape, vaskPerAr, bro, dekk], () => {
+  if (activeTab.value === 'results' && chartRef.value) updateChart()
+})
+
+// Render på vinduendring (responsiv canvas)
+onMounted(() => {
+  window.addEventListener('resize', () => {
+    if (activeTab.value === 'results' && chartRef.value) updateChart()
+  })
 })
 
 function renderChart(ctx, ox, oy, cw, ch) {
